@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>기업교육용 팀 궤적 시뮬레이터 (5대 모션 제어)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+        body { background-color: #050510; color: #f0f0f5; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+        header { text-align: center; padding: 18px; background: rgba(10, 10, 25, 0.95); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        header h1 { font-size: 1.7rem; background: linear-gradient(45deg, #a855f7, #3b82f6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header p { color: #94a3b8; font-size: 0.88rem; margin-top: 4px; }
+
+        .container { max-width: 1000px; margin: 15px auto; padding: 18px; background: rgba(15, 15, 35, 0.88); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); flex: 1; width: 95%; }
+        
+        .tab-buttons { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        .tab-btn { background: #1e1e3f; border: 1px solid #334155; color: #94a3b8; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+        .tab-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        #canvas-container { position: relative; width: 100%; aspect-ratio: 9/16; max-height: 560px; background: #03030a; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.25); margin: 0 auto 15px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        canvas { width: 100%; height: 100%; display: block; }
+        
+        .sim-controls { display: flex; gap: 10px; align-items: center; justify-content: center; margin-bottom: 15px; flex-wrap: wrap; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+        .btn:hover { background: #2563eb; }
+        .btn-secondary { background: #475569; }
+        .btn-secondary:hover { background: #334155; }
+        .btn-danger { background: #ef4444; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media (max-width: 650px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        .card-box { background: #12122c; padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; }
+        .card-box h4 { margin-bottom: 10px; color: #3b82f6; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; }
+
+        .form-group { margin-bottom: 8px; }
+        label { display: block; font-size: 0.8rem; color: #cbd5e1; margin-bottom: 3px; }
+        input, select { width: 100%; padding: 8px 10px; background: #1e1e3f; border: 1px solid #334155; border-radius: 6px; color: white; font-size: 0.85rem; }
+
+        .member-info-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 12px; max-height: 160px; overflow-y: auto; }
+        .member-card { background: #12122c; padding: 8px 10px; border-radius: 6px; border-left: 3px solid #fff; font-size: 0.8rem; }
+        .member-card h5 { font-size: 0.85rem; margin-bottom: 2px; color: #fff; }
+        .member-card p { color: #94a3b8; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🌌 기업교육용 팀 궤적 시뮬레이터</h1>
+        <p>사건별 모션(합류, 요동, 확장, 이탈, 축소)으로 설계하는 우리 팀의 연대기</p>
+    </header>
+
+    <div class="container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('sim')">🎬 시뮬레이션 미리보기</button>
+            <button class="tab-btn" onclick="switchTab('edit')">⚙️ 팀원 & 사건 설정 (<span id="member-count-badge">6</span>명)</button>
+        </div>
+
+        <!-- 탭 1: 시뮬레이션 -->
+        <div id="tab-sim" class="tab-content active">
+            <div id="canvas-container">
+                <canvas id="spaceCanvas"></canvas>
+            </div>
+            
+            <div class="sim-controls">
+                <button type="button" class="btn" onclick="startSimulation()">▶ 재생 / 다시시작</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleAudio()">🎵 BGM 켜기/끄기</button>
+                <button type="button" class="btn btn-danger" id="record-btn" onclick="toggleRecording()">🎬 녹화 & 다운로드 (.webm)</button>
+            </div>
+
+            <div class="member-info-panel" id="member-summary"></div>
+        </div>
+
+        <!-- 탭 2: 설정 -->
+        <div id="tab-edit" class="tab-content">
+            <div class="grid-2">
+                <div class="card-box">
+                    <h4>
+                        👥 팀원 목록 (최대 20명)
+                        <button type="button" class="btn" style="padding:4px 10px; font-size:0.8rem;" onclick="addMember()">+ 팀원 추가</button>
+                    </h4>
+                    <div id="member-inputs" style="max-height: 400px; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+
+                <div class="card-box">
+                    <h4>
+                        📅 사건 & 궤적 모션 설정
+                        <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="addEventInput()">+ 사건 추가</button>
+                    </h4>
+                    <div id="event-inputs" style="max-height: 400px; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+            </div>
+            
+            <div style="text-align: right; margin-top: 10px;">
+                <button type="button" class="btn" onclick="saveCustomData(); switchTab('sim');">💾 설정 저장 후 재생하기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colorPalette = [
+            "#a855f7", "#38bdf8", "#ec4899", "#4ade80", "#facc15", 
+            "#f97316", "#14b8a6", "#6366f1", "#f43f5e", "#8b5cf6",
+            "#06b6d4", "#10b981", "#eab308", "#ef4444", "#d946ef",
+            "#22c55e", "#64748b", "#0284c7", "#b91c1c", "#a21caf"
+        ];
+
+        let teamMembers = [
+            { id: 1, name: "김팀장", role: "팀 총괄", joinYear: 1.0, color: "#a855f7" },
+            { id: 2, name: "이수석", role: "기획 리드", joinYear: 1.5, color: "#38bdf8" },
+            { id: 3, name: "박책임", role: "개발 리드", joinYear: 2.0, color: "#ec4899" },
+            { id: 4, name: "최선임", role: "디자인", joinYear: 2.5, color: "#4ade80" },
+            { id: 5, name: "정선임", role: "마케팅", joinYear: 3.5, color: "#facc15" },
+            { id: 6, name: "강사원", role: "신입/운영", joinYear: 4.0, color: "#f97316" }
+        ];
+
+        // 5가지 모션 (merge, wobble, expansion, divergence, contraction)
+        let teamEvents = [
+            { year: 1.0, motion: "merge", text: "✨ [1년 차] 부서 출범 & 팀원 순차적 합류" },
+            { year: 2.0, motion: "contraction", text: "🔍 [2년 차] 원팀 결속 및 사업 기틀 밀착 마련" },
+            { year: 3.0, motion: "wobble", text: "🔥 [3년 차] 신사업 런칭! 치열한 몰입과 갈등의 요동" },
+            { year: 4.0, motion: "expansion", text: "🌟 [4년 차] 서비스 대박 및 조직 반경 대폭 확장" },
+            { year: 4.8, motion: "divergence", text: "🚀 [5년 차] 글로벌 팀 분화 및 사내 유학/도약" }
+        ];
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            if (tabName === 'sim') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('tab-sim').classList.add('active');
+                setTimeout(initCanvas, 50);
+            } else {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('tab-edit').classList.add('active');
+            }
+        }
+
+        function renderEditForms() {
+            document.getElementById('member-count-badge').innerText = teamMembers.length;
+            const mInputs = document.getElementById('member-inputs');
+            mInputs.innerHTML = '';
+            teamMembers.forEach((m, idx) => {
+                mInputs.innerHTML += `
+                    <div style="background:#1a1a3a; padding:8px 12px; border-radius:6px; margin-bottom:8px; border-left:3px solid ${m.color};">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <strong style="font-size:0.85rem;">팀원 #${idx+1}</strong>
+                            <button type="button" class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeMember(${idx})">삭제</button>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <input type="text" id="m-name-${idx}" value="${m.name}" placeholder="이름" style="flex:1;">
+                            <input type="number" step="0.5" id="m-year-${idx}" value="${m.joinYear}" placeholder="합류년차" style="width:75px;">
+                            <input type="color" id="m-color-${idx}" value="${m.color}" style="width:35px; height:32px; padding:0;">
+                        </div>
+                    </div>`;
+            });
+
+            renderEventInputs();
+        }
+
+        function renderEventInputs() {
+            const eInputs = document.getElementById('event-inputs');
+            eInputs.innerHTML = '';
+            teamEvents.forEach((e, idx) => {
+                eInputs.innerHTML += `
+                    <div style="background:#1a1a3a; padding:8px; border-radius:6px; margin-bottom:8px;">
+                        <div style="display:flex; gap:6px; margin-bottom:4px; align-items:center;">
+                            <input type="number" step="0.5" id="e-year-${idx}" value="${e.year}" style="width:65px;" placeholder="년차">
+                            <select id="e-motion-${idx}" style="flex:1;">
+                                <option value="merge" ${e.motion === 'merge' ? 'selected' : ''}>🔗 합류 (Merge)</option>
+                                <option value="wobble" ${e.motion === 'wobble' ? 'selected' : ''}>🔥 요동 (Wobble)</option>
+                                <option value="expansion" ${e.motion === 'expansion' ? 'selected' : ''}>🌟 확장 (Expansion)</option>
+                                <option value="divergence" ${e.motion === 'divergence' ? 'selected' : ''}>🚀 이탈 (Divergence)</option>
+                                <option value="contraction" ${e.motion === 'contraction' ? 'selected' : ''}>🔍 축소 (Contraction)</option>
+                            </select>
+                            <button type="button" class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem;" onclick="removeEvent(${idx})">삭제</button>
+                        </div>
+                        <input type="text" id="e-text-${idx}" value="${e.text}" placeholder="사건 설명 입력">
+                    </div>`;
+            });
+        }
+
+        function addMember() {
+            if (teamMembers.length >= 20) return alert('최대 20명까지만 추가 가능합니다.');
+            const newIdx = teamMembers.length;
+            teamMembers.push({
+                id: newIdx + 1,
+                name: `팀원${newIdx + 1}`,
+                role: '팀원',
+                joinYear: 2.0,
+                color: colorPalette[newIdx % colorPalette.length]
+            });
+            renderEditForms();
+        }
+
+        function removeMember(idx) {
+            if (teamMembers.length <= 1) return alert('최소 1명의 팀원은 존재해야 합니다.');
+            teamMembers.splice(idx, 1);
+            renderEditForms();
+        }
+
+        function addEventInput() {
+            teamEvents.push({ year: 3.0, motion: "wobble", text: "새로운 핵심 목표 달성" });
+            renderEventInputs();
+        }
+
+        function removeEvent(idx) {
+            teamEvents.splice(idx, 1);
+            renderEventInputs();
+        }
+
+        function saveCustomData() {
+            teamMembers.forEach((m, idx) => {
+                const nameInput = document.getElementById(`m-name-${idx}`);
+                if (nameInput) {
+                    m.name = nameInput.value;
+                    m.joinYear = parseFloat(document.getElementById(`m-year-${idx}`).value) || 1.0;
+                    m.color = document.getElementById(`m-color-${idx}`).value;
+                }
+            });
+
+            const newEvents = [];
+            teamEvents.forEach((e, idx) => {
+                const yInput = document.getElementById(`e-year-${idx}`);
+                const mInput = document.getElementById(`e-motion-${idx}`);
+                const tInput = document.getElementById(`e-text-${idx}`);
+                if (yInput && tInput && mInput) {
+                    newEvents.push({
+                        year: parseFloat(yInput.value) || 1.0,
+                        motion: mInput.value,
+                        text: tInput.value
+                    });
+                }
+            });
+            teamEvents = newEvents;
+            renderSummaryCards();
+        }
+
+        function renderSummaryCards() {
+            const container = document.getElementById('member-summary');
+            if (!container) return;
+            container.innerHTML = '';
+            teamMembers.forEach(m => {
+                container.innerHTML += `
+                    <div class="member-card" style="border-color: ${m.color};">
+                        <h5>${m.name}</h5>
+                        <p>${m.joinYear}년 차 합류</p>
+                    </div>`;
+            });
+        }
+
+        // 스무스스텝 보간 함수 (부드러운 모션 전환)
+        function smoothstep(min, max, value) {
+            const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
+            return x * x * (3 - 2 * x);
+        }
+
+        let animId = null;
+        let currentYear = 0;
+        const maxYear = 5.2;
+        let stars = [];
+        let audioCtx = null;
+        let isAudioOn = false;
+
+        function initCanvas() {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            
+            const dpr = window.devicePixelRatio || 2;
+            const container = document.getElementById('canvas-container');
+            const rect = container.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            stars = [];
+            for (let i = 0; i < 180; i++) {
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: (Math.random() * 1.8 + 0.5) * dpr });
+            }
+            renderSummaryCards();
+            startSimulation();
+        }
+
+        function startSimulation() {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 2;
+            if (animId) cancelAnimationFrame(animId);
+
+            currentYear = 0;
+            const totalCount = teamMembers.length;
+            
+            const memberStates = teamMembers.map((m, idx) => {
+                const spawnAngle = (idx / totalCount) * Math.PI * 2;
+                const cornerDist = canvas.width * 0.38;
+                const startX = canvas.width / 2 + Math.cos(spawnAngle) * cornerDist;
+                const startY = canvas.height / 2 + Math.sin(spawnAngle) * cornerDist;
+
+                const ringRadius = (70 + (idx % 4) * 30) * dpr; 
+                const orbitOffset = (idx / totalCount) * Math.PI * 2;
+
+                return {
+                    ...m,
+                    angle: 0,
+                    startX: startX,
+                    startY: startY,
+                    ringRadius: ringRadius,
+                    orbitOffset: orbitOffset,
+                    path: []
+                };
+            });
+
+            let startTime = performance.now();
+            const duration = 38000;
+
+            function animate(now) {
+                let elapsed = now - startTime;
+                let progress = Math.min(elapsed / duration, 1);
+                currentYear = progress * maxYear;
+
+                ctx.fillStyle = '#03030a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                stars.forEach(s => {
+                    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                    ctx.fillRect(s.x, s.y, s.size, s.size);
+                });
+
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+
+                // 팀 중심 링
+                if (currentYear >= 0.8) {
+                    let ringAlpha = Math.min((currentYear - 0.8) * 1.2, 0.3);
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 115 * dpr, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(59, 130, 246, ${ringAlpha})`;
+                    ctx.lineWidth = 2 * dpr;
+                    ctx.setLineDash([8 * dpr, 8 * dpr]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.fillStyle = `rgba(255, 255, 255, ${ringAlpha * 2.5})`;
+                    ctx.font = `bold ${14 * dpr}px sans-serif`;
+                    ctx.textAlign = "center";
+                    ctx.fillText("(팀)", cx, cy + 5 * dpr);
+                }
+
+                // 현재 활성화된 모션 상태 평가
+                let isWobbleActive = false;
+                let radiusModifier = 1.0;
+                let divergenceFactor = 0.0;
+
+                teamEvents.forEach(evt => {
+                    const eventRange = 0.4;
+                    if (currentYear >= evt.year - eventRange && currentYear <= evt.year + eventRange) {
+                        const factor = Math.sin(((currentYear - (evt.year - eventRange)) / (eventRange * 2)) * Math.PI);
+                        
+                        if (evt.motion === 'wobble') {
+                            isWobbleActive = true;
+                        } else if (evt.motion === 'expansion') {
+                            radiusModifier += factor * 0.6; // 궤도 확장
+                        } else if (evt.motion === 'contraction') {
+                            radiusModifier -= factor * 0.45; // 궤도 축소
+                        } else if (evt.motion === 'divergence') {
+                            divergenceFactor += factor * 1.5; // 외곽 이탈
+                        }
+                    }
+                });
+
+                memberStates.forEach((m, idx) => {
+                    let x, y;
+
+                    if (currentYear < m.joinYear) {
+                        // 입사 전 독자 궤도
+                        m.angle += 0.012; 
+                        x = m.startX + Math.cos(m.angle) * (20 * dpr);
+                        y = m.startY + Math.sin(m.angle) * (20 * dpr);
+                    } else if (currentYear >= m.joinYear && currentYear < m.joinYear + 0.5) {
+                        // 합류 모션 (Merge)
+                        let moveProg = smoothstep(m.joinYear, m.joinYear + 0.5, currentYear);
+                        let targetX = cx + Math.cos(m.angle + m.orbitOffset) * m.ringRadius;
+                        let targetY = cy + Math.sin(m.angle + m.orbitOffset) * m.ringRadius;
+
+                        x = m.startX + (targetX - m.startX) * moveProg;
+                        y = m.startY + (targetY - m.startY) * moveProg;
+                        m.angle += 0.01;
+                    } else {
+                        // 팀 합류 후
+                        m.angle += 0.01; 
+                        let baseRadius = m.ringRadius * radiusModifier;
+                        let wobbleOffset = 0;
+
+                        if (isWobbleActive) {
+                            wobbleOffset = Math.sin(now * 0.02 + idx) * (14 * dpr);
+                        }
+
+                        if (divergenceFactor > 0 && idx % 3 === 0) { // 일부 특정 별 이탈 연출
+                            baseRadius += divergenceFactor * (120 * dpr);
+                        }
+
+                        x = cx + Math.cos(m.angle + m.orbitOffset) * (baseRadius + wobbleOffset);
+                        y = cy + Math.sin(m.angle + m.orbitOffset) * (baseRadius + wobbleOffset);
+                    }
+
+                    m.path.push({ x: x, y: y });
+
+                    // 궤적 누적선
+                    if (m.path.length > 1) {
+                        ctx.beginPath();
+                        ctx.moveTo(m.path[0].x, m.path[0].y);
+                        for (let i = 1; i < m.path.length; i++) {
+                            ctx.lineTo(m.path[i].x, m.path[i].y);
+                        }
+                        let starColor = isWobbleActive ? "#ef4444" : m.color;
+
+                        ctx.strokeStyle = starColor;
+                        ctx.globalAlpha = 0.5;
+                        ctx.lineWidth = 2 * dpr;
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    }
+
+                    // 별 헤드
+                    ctx.beginPath();
+                    ctx.arc(x, y, 6 * dpr, 0, Math.PI * 2);
+                    let starColor = isWobbleActive ? "#ef4444" : m.color;
+
+                    ctx.fillStyle = starColor;
+                    ctx.shadowBlur = 12 * dpr;
+                    ctx.shadowColor = starColor;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // 가독성 뱃지
+                    const labelText = m.name;
+                    ctx.font = `bold ${12 * dpr}px sans-serif`;
+                    const textWidth = ctx.measureText(labelText).width;
+                    const badgeWidth = textWidth + 16 * dpr;
+                    const badgeHeight = 22 * dpr;
+                    const badgeX = x - badgeWidth / 2;
+                    const badgeY = y - 28 * dpr;
+
+                    ctx.fillStyle = "rgba(8, 8, 22, 0.88)";
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6 * dpr);
+                    ctx.fill();
+                    ctx.strokeStyle = starColor;
+                    ctx.lineWidth = 1 * dpr;
+                    ctx.stroke();
+
+                    ctx.fillStyle = "#ffffff";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(labelText, x, badgeY + badgeHeight / 2);
+                });
+
+                // 자막 표시
+                let currentEvent = teamEvents.find(e => Math.abs(e.year - currentYear) < 0.35);
+                if (currentEvent) {
+                    const cardW = canvas.width - 60 * dpr;
+                    const cardH = 50 * dpr;
+                    const cardX = 30 * dpr;
+                    const cardY = canvas.height - 100 * dpr;
+
+                    ctx.fillStyle = "rgba(5, 5, 18, 0.92)";
+                    ctx.beginPath();
+                    ctx.roundRect(cardX, cardY, cardW, cardH, 10 * dpr);
+                    ctx.fill();
+                    ctx.strokeStyle = "rgba(250, 204, 21, 0.6)";
+                    ctx.lineWidth = 1.5 * dpr;
+                    ctx.stroke();
+
+                    ctx.fillStyle = "#facc15";
+                    ctx.font = `bold ${14 * dpr}px sans-serif`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(`${currentEvent.text}`, canvas.width / 2, cardY + cardH / 2);
+                }
+
+                if (progress < 1) {
+                    animId = requestAnimationFrame(animate);
+                }
+            }
+            animId = requestAnimationFrame(animate);
+        }
+
+        function toggleAudio() {
+            isAudioOn = !isAudioOn;
+            if (isAudioOn) {
+                alert("피아노 BGM이 활성화되었습니다.");
+                playBGM();
+            } else {
+                if (audioCtx) audioCtx.close();
+                alert("BGM이 꺼졌습니다.");
+            }
+        }
+
+        function playBGM() {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const notes = [261.63, 329.63, 392.00, 523.25, 440.00, 349.23];
+                let i = 0;
+                setInterval(() => {
+                    if (!isAudioOn || !audioCtx) return;
+                    let osc = audioCtx.createOscillator();
+                    let gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = notes[i % notes.length];
+                    i++;
+                    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 3);
+                }, 3500);
+            } catch(e) {}
+        }
+
+        let mediaRecorder;
+        let recordedChunks = [];
+        function toggleRecording() {
+            const btn = document.getElementById('record-btn');
+            const canvas = document.getElementById('spaceCanvas');
+            if (btn.innerText.includes("녹화")) {
+                recordedChunks = [];
+                const stream = canvas.captureStream(30);
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'team_galaxy_v5.webm';
+                    a.click();
+                    btn.innerText = "🎬 영상 녹화 & 다운로드 (.webm)";
+                };
+                mediaRecorder.start();
+                btn.innerText = "⏹️ 녹화 중지 및 저장";
+                startSimulation();
+            } else {
+                mediaRecorder.stop();
+            }
+        }
+
+        window.onload = function() {
+            renderEditForms();
+            initCanvas();
+            window.addEventListener('resize', initCanvas);
+        };
+    </script>
+</body>
+</html>
