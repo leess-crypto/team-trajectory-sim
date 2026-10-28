@@ -59,6 +59,10 @@
         <h1>🌌 팀 궤적 시뮬레이터</h1>
     </header>
 
+    <audio id="bgm-audio" loop preload="auto">
+        <source src="./bgm.mp3" type="audio/mpeg">
+    </audio>
+
     <div class="container">
         <div class="tab-buttons">
             <button class="tab-btn active" onclick="switchTab('edit')">⚙️ 팀원 및 사건 설정 (<span id="member-count-badge">5</span>명)</button>
@@ -117,6 +121,7 @@
             "#22c55e", "#64748b", "#0284c7", "#b91c1c", "#a21caf"
         ];
 
+        // 기본 예시 팀원 데이터 복구
         let teamMembers = [
             { id: 1, name: "김팀장", joinYear: 2020.0, color: "#a855f7" },
             { id: 2, name: "이수석", joinYear: 2021.0, color: "#38bdf8" },
@@ -125,6 +130,7 @@
             { id: 5, name: "정사원", joinYear: 2024.5, color: "#facc15" }
         ];
 
+        // 기본 예시 사건 데이터 복구
         let teamEvents = [
             { startYear: 2020.0, endYear: 2020.5, motion: "merge", targets: "all", text: "✨ [2020 상반기] 부서 출범 및 김팀장 합류" },
             { startYear: 2021.0, endYear: 2021.5, motion: "merge", targets: "all", text: "🚀 [2021 상반기] 이수석 합류 및 첫 프로젝트 킥오프" },
@@ -135,7 +141,6 @@
 
         let simSpeed = 1.0;
         let isAudioOn = false;
-        let bgmAudio = null;
         let isPlaying = false;
         let animId = null;
         let simYear = 2020;
@@ -146,14 +151,6 @@
         let lastTime = 0;
         let currentProgress = 0;
         const baseDuration = 38000;
-
-        // BGM 객체 초기화
-        function initAudio() {
-            if (!bgmAudio) {
-                bgmAudio = new Audio('bgm.mp3');
-                bgmAudio.loop = true;
-            }
-        }
 
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -282,3 +279,383 @@
             if (teamMembers.length >= 20) return alert('최대 20명까지만 추가 가능합니다.');
             const newId = teamMembers.length > 0 ? Math.max(...teamMembers.map(m => m.id)) + 1 : 1;
             const newIdx = teamMembers.length;
+            teamMembers.push({
+                id: newId,
+                name: `팀원${newIdx + 1}`,
+                joinYear: 2023.0,
+                color: colorPalette[newIdx % colorPalette.length]
+            });
+            renderEditForms();
+        }
+
+        function removeMember(idx) {
+            if (teamMembers.length <= 1) return alert('최소 1명의 팀원은 존재해야 합니다.');
+            teamMembers.splice(idx, 1);
+            renderEditForms();
+        }
+
+        function addEventInput() {
+            teamEvents.push({ startYear: 2025.0, endYear: 2025.5, motion: "expansion", targets: "all", text: "새로운 성과 달성" });
+            renderEventInputs();
+        }
+
+        function removeEvent(idx) {
+            teamEvents.splice(idx, 1);
+            renderEventInputs();
+        }
+
+        function saveCustomData() {
+            teamMembers.forEach((m, idx) => {
+                const nameInput = document.getElementById(`m-name-${idx}`);
+                if (nameInput) {
+                    m.name = nameInput.value;
+                    let yr = parseInt(document.getElementById(`m-year-${idx}`).value) || 2020;
+                    let hf = parseFloat(document.getElementById(`m-half-${idx}`).value) || 0.0;
+                    m.joinYear = yr + hf;
+                    m.color = document.getElementById(`m-color-${idx}`).value;
+                }
+            });
+
+            const newEvents = [];
+            teamEvents.forEach((e, idx) => {
+                const sYr = parseInt(document.getElementById(`e-s-year-${idx}`).value) || 2020;
+                const sHf = parseFloat(document.getElementById(`e-s-half-${idx}`).value) || 0.0;
+                const eYr = parseInt(document.getElementById(`e-e-year-${idx}`).value) || 2020;
+                const eHf = parseFloat(document.getElementById(`e-e-half-${idx}`).value) || 0.0;
+                
+                const mInput = document.getElementById(`e-motion-${idx}`);
+                const tInput = document.getElementById(`e-text-${idx}`);
+                
+                if (tInput && mInput) {
+                    const allChecked = document.querySelector(`.evt-target-all-${idx}`).checked;
+                    let targets = 'all';
+                    if (!allChecked) {
+                        targets = [];
+                        document.querySelectorAll(`.evt-target-${idx}:checked`).forEach(chk => {
+                            targets.push(parseInt(chk.value));
+                        });
+                    }
+
+                    newEvents.push({
+                        startYear: sYr + sHf,
+                        endYear: eYr + eHf,
+                        motion: mInput.value,
+                        targets: targets,
+                        text: tInput.value
+                    });
+                }
+            });
+            teamEvents = newEvents;
+            renderSummaryCards();
+            alert("설정이 저장되었습니다.");
+        }
+
+        function renderSummaryCards() {
+            const container = document.getElementById('member-summary');
+            if (!container) return;
+            container.innerHTML = '';
+            teamMembers.forEach(m => {
+                let yr = Math.floor(m.joinYear);
+                let halfStr = m.joinYear % 1 === 0.5 ? '하반기' : '상반기';
+                container.innerHTML += `
+                    <div class="member-card" style="border-color: ${m.color};">
+                        <h5>${m.name}</h5>
+                        <p>${yr}년 ${halfStr} 합류</p>
+                    </div>`;
+            });
+        }
+
+        function smoothstep(min, max, value) {
+            const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
+            return x * x * (3 - 2 * x);
+        }
+
+        function updateSpeed(val) {
+            simSpeed = parseFloat(val);
+            document.getElementById('speed-val').innerText = simSpeed.toFixed(1);
+        }
+
+        function initCanvas() {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            
+            const dpr = window.devicePixelRatio || 2;
+            const container = document.getElementById('canvas-container');
+            const rect = container.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            minYear = Math.min(...teamMembers.map(m => m.joinYear));
+            maxYear = Math.max(...teamMembers.map(m => m.joinYear), ...teamEvents.map(e => e.endYear), minYear + 3);
+
+            stars = [];
+            for (let i = 0; i < 180; i++) {
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: (Math.random() * 1.8 + 0.5) * dpr });
+            }
+            renderSummaryCards();
+        }
+
+        function resetSimulation() {
+            if (animId) cancelAnimationFrame(animId);
+            isPlaying = false;
+            document.getElementById('play-btn').innerText = "▶ 재생";
+            currentProgress = 0;
+            simYear = minYear;
+
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            const totalCount = teamMembers.length;
+            const dpr = window.devicePixelRatio || 2;
+
+            memberStates = teamMembers.map((m, idx) => {
+                const spawnAngle = (idx / totalCount) * Math.PI * 2;
+                const cornerDist = canvas.width * 0.38;
+                const startX = canvas.width / 2 + Math.cos(spawnAngle) * cornerDist;
+                const startY = canvas.height / 2 + Math.sin(spawnAngle) * cornerDist;
+                const ringRadius = (70 + (idx % 4) * 30) * dpr; 
+                const orbitOffset = (idx / totalCount) * Math.PI * 2;
+
+                return {
+                    ...m,
+                    angle: 0,
+                    startX: startX,
+                    startY: startY,
+                    ringRadius: ringRadius,
+                    orbitOffset: orbitOffset,
+                    path: []
+                };
+            });
+
+            drawFrame(performance.now());
+        }
+
+        function togglePlayPause() {
+            const btn = document.getElementById('play-btn');
+            if (isPlaying) {
+                isPlaying = false;
+                cancelAnimationFrame(animId);
+                btn.innerText = "▶ 재생";
+            } else {
+                if (currentProgress >= 1) {
+                    currentProgress = 0;
+                }
+                isPlaying = true;
+                btn.innerText = "⏸ 일시정지";
+                lastTime = performance.now();
+                animId = requestAnimationFrame(animate);
+            }
+        }
+
+        function animate(now) {
+            let delta = now - lastTime;
+            lastTime = now;
+
+            if (delta > 100) delta = 16.6;
+
+            currentProgress += (delta * simSpeed) / baseDuration;
+            if (currentProgress >= 1) {
+                currentProgress = 1;
+                isPlaying = false;
+                document.getElementById('play-btn').innerText = "▶ 재생";
+            }
+
+            drawFrame(now);
+
+            if (isPlaying) {
+                animId = requestAnimationFrame(animate);
+            }
+        }
+
+        function drawFrame(now) {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 2;
+
+            simYear = minYear + currentProgress * (maxYear - minYear);
+
+            ctx.fillStyle = '#03030a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            stars.forEach(s => {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            });
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            let ringAlpha = Math.min((simYear - minYear) * 0.5, 0.3);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 115 * dpr, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(59, 130, 246, ${ringAlpha})`;
+            ctx.lineWidth = 2 * dpr;
+            ctx.setLineDash([8 * dpr, 8 * dpr]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${ringAlpha * 2.5})`;
+            ctx.font = `bold ${14 * dpr}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText("(팀)", cx, cy + 5 * dpr);
+
+            memberStates.forEach(m => {
+                if (simYear < m.joinYear) return;
+
+                let x, y;
+                let opacity = 1.0;
+                let radiusModifier = 1.0;
+                let wobbleOffset = 0;
+                let extraDivergence = 0;
+
+                teamEvents.forEach(evt => {
+                    if (simYear >= evt.startYear && simYear <= evt.endYear) {
+                        const isTargeted = evt.targets === 'all' || (Array.isArray(evt.targets) && evt.targets.includes(m.id));
+                        if (isTargeted) {
+                            const factor = Math.sin(((simYear - evt.startYear) / (evt.endYear - evt.startYear || 0.5)) * Math.PI);
+                            
+                            if (evt.motion === 'wobble') {
+                                wobbleOffset = Math.sin(now * 0.02 + m.id) * (14 * dpr);
+                            } else if (evt.motion === 'expansion') {
+                                radiusModifier += factor * 0.5;
+                            } else if (evt.motion === 'contraction') {
+                                radiusModifier -= factor * 0.4;
+                            } else if (evt.motion === 'divergence') {
+                                extraDivergence += factor * (140 * dpr);
+                                opacity = Math.max(1 - factor * 0.75, 0.25);
+                            }
+                        }
+                    }
+                });
+
+                if (simYear >= m.joinYear && simYear < m.joinYear + 0.5) {
+                    let moveProg = smoothstep(m.joinYear, m.joinYear + 0.5, simYear);
+                    let targetX = cx + Math.cos(m.angle + m.orbitOffset) * m.ringRadius;
+                    let targetY = cy + Math.sin(m.angle + m.orbitOffset) * m.ringRadius;
+
+                    x = m.startX + (targetX - m.startX) * moveProg;
+                    y = m.startY + (targetY - m.startY) * moveProg;
+                    m.angle += 0.01 * (isPlaying ? simSpeed : 0);
+                } else {
+                    if (isPlaying) m.angle += 0.01 * simSpeed;
+                    let currentRadius = (m.ringRadius * radiusModifier) + extraDivergence;
+                    x = cx + Math.cos(m.angle + m.orbitOffset) * (currentRadius + wobbleOffset);
+                    y = cy + Math.sin(m.angle + m.orbitOffset) * (currentRadius + wobbleOffset);
+                }
+
+                const lastPoint = m.path[m.path.length - 1];
+                if (!lastPoint || Math.hypot(lastPoint.x - x, lastPoint.y - y) > 2 * dpr) {
+                    m.path.push({ x: x, y: y });
+                }
+
+                if (m.path.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(m.path[0].x, m.path[0].y);
+                    for (let i = 1; i < m.path.length; i++) {
+                        ctx.lineTo(m.path[i].x, m.path[i].y);
+                    }
+                    ctx.strokeStyle = m.color;
+                    ctx.globalAlpha = 0.4 * opacity;
+                    ctx.lineWidth = 2 * dpr;
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+                }
+
+                ctx.beginPath();
+                ctx.arc(x, y, 6 * dpr, 0, Math.PI * 2);
+                ctx.fillStyle = m.color;
+                ctx.globalAlpha = opacity;
+                ctx.shadowBlur = 12 * dpr;
+                ctx.shadowColor = m.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                const labelText = m.name;
+                ctx.font = `bold ${12 * dpr}px sans-serif`;
+                const textWidth = ctx.measureText(labelText).width;
+                const badgeWidth = textWidth + 16 * dpr;
+                const badgeHeight = 22 * dpr;
+                const badgeX = x - badgeWidth / 2;
+                const badgeY = y - 28 * dpr;
+
+                ctx.fillStyle = `rgba(8, 8, 22, ${0.88 * opacity})`;
+                ctx.beginPath();
+                ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6 * dpr);
+                ctx.fill();
+                ctx.strokeStyle = m.color;
+                ctx.lineWidth = 1 * dpr;
+                ctx.stroke();
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(labelText, x, badgeY + badgeHeight / 2);
+                ctx.globalAlpha = 1.0;
+            });
+
+            ctx.fillStyle = "rgba(10, 10, 25, 0.85)";
+            ctx.fillRect(canvas.width / 2 - 85, 20, 170, 36);
+            ctx.strokeStyle = "#3b82f6";
+            ctx.lineWidth = 1.5 * dpr;
+            ctx.beginPath();
+            ctx.roundRect(canvas.width / 2 - 85, 20, 170, 36, 8 * dpr);
+            ctx.stroke();
+
+            ctx.fillStyle = "#38bdf8";
+            ctx.font = `bold ${15 * dpr}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            let currYearInt = Math.floor(simYear);
+            let currHalfStr = simYear % 1 >= 0.4 ? '하반기' : '상반기';
+            ctx.fillText(`📅 ${currYearInt}년 ${currHalfStr}`, canvas.width / 2, 38);
+
+            let currentEvent = teamEvents.find(e => simYear >= e.startYear && simYear <= e.endYear);
+            if (currentEvent) {
+                const cardW = canvas.width - 60 * dpr;
+                const cardH = 50 * dpr;
+                const cardX = 30 * dpr;
+                const cardY = canvas.height - 100 * dpr;
+
+                ctx.fillStyle = "rgba(5, 5, 18, 0.92)";
+                ctx.beginPath();
+                ctx.roundRect(cardX, cardY, cardW, cardH, 10 * dpr);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(250, 204, 21, 0.6)";
+                ctx.lineWidth = 1.5 * dpr;
+                ctx.stroke();
+
+                ctx.fillStyle = "#facc15";
+                ctx.font = `bold ${14 * dpr}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(`${currentEvent.text}`, canvas.width / 2, cardY + cardH / 2);
+            }
+        }
+
+        function toggleAudio() {
+            const audio = document.getElementById('bgm-audio');
+            const btn = document.getElementById('bgm-btn');
+            
+            if (isAudioOn) {
+                audio.pause();
+                isAudioOn = false;
+                btn.innerText = "🎵 BGM 켜기";
+            } else {
+                audio.play().then(() => {
+                    isAudioOn = true;
+                    btn.innerText = "🎵 BGM 끄기";
+                }).catch(err => {
+                    console.error("Audio Load Error:", err);
+                    isAudioOn = true;
+                    btn.innerText = "🎵 BGM 끄기";
+                });
+            }
+        }
+
+        window.onload = function() {
+            renderEditForms();
+        };
+    </script>
+</body>
+</html>
