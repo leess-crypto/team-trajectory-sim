@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>팀 궤적 시뮬레이터</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+        body { background-color: #050510; color: #f0f0f5; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+        header { text-align: center; padding: 18px; background: rgba(10, 10, 25, 0.95); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        header h1 { font-size: 1.7rem; background: linear-gradient(45deg, #a855f7, #3b82f6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        .container { max-width: 1050px; margin: 15px auto; padding: 18px; background: rgba(15, 15, 35, 0.88); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); flex: 1; width: 95%; }
+        
+        .tab-buttons { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        .tab-btn { background: #1e1e3f; border: 1px solid #334155; color: #94a3b8; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+        .tab-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        #canvas-container { position: relative; width: 100%; aspect-ratio: 9/16; max-height: 560px; background: #03030a; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.25); margin: 0 auto 15px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        canvas { width: 100%; height: 100%; display: block; }
+        
+        /* 컨트롤러 한 줄 배치 스타일 */
+        .sim-controls { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 15px; flex-wrap: nowrap; background: rgba(26, 26, 58, 0.6); padding: 10px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); }
+        
+        .btn { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.85rem; white-space: nowrap; }
+        .btn:hover { background: #2563eb; }
+        .btn-secondary { background: #475569; }
+        .btn-secondary:hover { background: #334155; }
+        .btn-danger { background: #ef4444; }
+
+        /* 속도 슬라이드바 스타일 */
+        .speed-control-box { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #cbd5e1; white-space: nowrap; }
+        .speed-slider { -webkit-appearance: none; width: 100px; height: 6px; background: #334155; border-radius: 3px; outline: none; }
+        .speed-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #38bdf8; cursor: pointer; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media (max-width: 750px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        .card-box { background: #12122c; padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; }
+        .card-box h4 { margin-bottom: 10px; color: #3b82f6; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; }
+
+        .form-group { margin-bottom: 8px; }
+        label { display: block; font-size: 0.8rem; color: #cbd5e1; margin-bottom: 3px; }
+        input, select { width: 100%; padding: 8px 10px; background: #1e1e3f; border: 1px solid #334155; border-radius: 6px; color: white; font-size: 0.85rem; }
+
+        .member-info-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; max-height: 160px; overflow-y: auto; }
+        .member-card { background: #12122c; padding: 8px 10px; border-radius: 6px; border-left: 3px solid #fff; font-size: 0.8rem; }
+        .member-card h5 { font-size: 0.85rem; margin-bottom: 2px; color: #fff; }
+        .member-card p { color: #94a3b8; font-size: 0.75rem; }
+        
+        .checkbox-group { display: flex; flex-wrap: wrap; gap: 6px; background: #1a1a3a; padding: 6px; border-radius: 6px; margin-top: 4px; }
+        .checkbox-group label { font-size: 0.75rem; display: flex; align-items: center; gap: 3px; cursor: pointer; color: #e2e8f0; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🌌 팀 궤적 시뮬레이터</h1>
+    </header>
+
+    <!-- 배경음악용 오디오 요소 -->
+    <audio id="bgm-audio" src="bgm.mp3" loop></audio>
+
+    <div class="container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('edit')">⚙️ 팀원 및 사건 설정 (<span id="member-count-badge">5</span>명)</button>
+            <button class="tab-btn" onclick="switchTab('sim')">🎬 시뮬레이션</button>
+        </div>
+
+        <!-- 탭 1: 설정 -->
+        <div id="tab-edit" class="tab-content active">
+            <div class="grid-2">
+                <div class="card-box">
+                    <h4>
+                        👥 팀원 목록 (최대 20명)
+                        <button type="button" class="btn" style="padding:4px 10px; font-size:0.8rem;" onclick="addMember()">+ 팀원 추가</button>
+                    </h4>
+                    <div id="member-inputs" style="max-height: 420px; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+
+                <div class="card-box">
+                    <h4>
+                        📅 기간별 사건 & 모션 설정
+                        <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="addEventInput()">+ 사건 추가</button>
+                    </h4>
+                    <div id="event-inputs" style="max-height: 420px; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+            </div>
+            
+            <div style="text-align: right; margin-top: 10px;">
+                <button type="button" class="btn" onclick="saveCustomData();">💾 설정 저장</button>
+            </div>
+        </div>
+
+        <!-- 탭 2: 시뮬레이션 -->
+        <div id="tab-sim" class="tab-content">
+            <div id="canvas-container">
+                <canvas id="spaceCanvas"></canvas>
+            </div>
+            
+            <!-- 한 줄 컨트롤러 바 -->
+            <div class="sim-controls">
+                <button type="button" class="btn" id="play-btn" onclick="togglePlayPause()">▶ 재생</button>
+                
+                <div class="speed-control-box">
+                    <span>속도: <strong id="speed-val">1.0</strong>배</span>
+                    <input type="range" min="0.5" max="2.0" step="0.1" value="1.0" class="speed-slider" id="speed-slider" oninput="updateSpeed(this.value)">
+                </div>
+
+                <button type="button" class="btn btn-secondary" id="bgm-btn" onclick="toggleAudio()">🎵 BGM 켜기</button>
+            </div>
+
+            <div class="member-info-panel" id="member-summary"></div>
+        </div>
+    </div>
+
+    <script>
+        const colorPalette = [
+            "#a855f7", "#38bdf8", "#ec4899", "#4ade80", "#facc15", 
+            "#f97316", "#14b8a6", "#6366f1", "#f43f5e", "#8b5cf6",
+            "#06b6d4", "#10b981", "#eab308", "#ef4444", "#d946ef",
+            "#22c55e", "#64748b", "#0284c7", "#b91c1c", "#a21caf"
+        ];
+
+        let teamMembers = [
+            { id: 1, name: "김팀장", joinYear: 2020.0, color: "#a855f7" },
+            { id: 2, name: "이수석", joinYear: 2021.0, color: "#38bdf8" },
+            { id: 3, name: "박책임", joinYear: 2022.0, color: "#ec4899" },
+            { id: 4, name: "최선임", joinYear: 2023.0, color: "#4ade80" },
+            { id: 5, name: "정사원", joinYear: 2024.5, color: "#facc15" }
+        ];
+
+        let teamEvents = [
+            { startYear: 2020.0, endYear: 2020.5, motion: "merge", targets: "all", text: "✨ [2020 상반기] 부서 출범 및 김팀장 합류" },
+            { startYear: 2021.0, endYear: 2021.5, motion: "merge", targets: "all", text: "🚀 [2021 상반기] 이수석 합류 및 첫 프로젝트 킥오프" },
+            { startYear: 2022.5, endYear: 2023.0, motion: "wobble", targets: "all", text: "🔥 [2022 하~23 상] 대규모 마감 압박 및 요동기" },
+            { startYear: 2023.5, endYear: 2024.0, motion: "expansion", targets: "all", text: "🌟 [2023 하~24 상] 성과 달성 및 은하수 확장" },
+            { startYear: 2025.0, endYear: 2026.0, motion: "divergence", targets: [3], text: "🚀 [2025~2026] 박책임 해외 파견 및 잠시 이탈" }
+        ];
+
+        let simSpeed = 1.0;
+        let isAudioOn = false;
+        let isPlaying = false;
+        let animId = null;
+        let simYear = 2020;
+        let minYear = 2020;
+        let maxYear = 2026;
+        let stars = [];
+        let memberStates = [];
+        let lastTime = 0;
+        let currentProgress = 0;
+        const baseDuration = 38000;
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            if (tabName === 'edit') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('tab-edit').classList.add('active');
+                if (animId) cancelAnimationFrame(animId);
+                isPlaying = false;
+                document.getElementById('play-btn').innerText = "▶ 재생";
+            } else {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('tab-sim').classList.add('active');
+                setTimeout(() => {
+                    initCanvas();
+                    resetSimulation();
+                }, 50);
+            }
+        }
+
+        function renderEditForms() {
+            document.getElementById('member-count-badge').innerText = teamMembers.length;
+            const mInputs = document.getElementById('member-inputs');
+            mInputs.innerHTML = '';
+            teamMembers.forEach((m, idx) => {
+                let baseYear = Math.floor(m.joinYear);
+                let half = m.joinYear % 1 === 0.5 ? '0.5' : '0.0';
+
+                mInputs.innerHTML += `
+                    <div style="background:#1a1a3a; padding:8px 12px; border-radius:6px; margin-bottom:8px; border-left:3px solid ${m.color};">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <strong style="font-size:0.85rem;">팀원 #${idx+1} (ID: ${m.id})</strong>
+                            <button type="button" class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeMember(${idx})">삭제</button>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:4px;">
+                            <input type="text" id="m-name-${idx}" value="${m.name}" placeholder="이름" style="flex:1;">
+                            <input type="color" id="m-color-${idx}" value="${m.color}" style="width:35px; height:32px; padding:0;">
+                        </div>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <label style="font-size:0.75rem; width:55px;">입사시기:</label>
+                            <input type="number" id="m-year-${idx}" value="${baseYear}" style="width:80px;" placeholder="연도">
+                            <select id="m-half-${idx}" style="flex:1;">
+                                <option value="0.0" ${half === '0.0' ? 'selected' : ''}>상반기</option>
+                                <option value="0.5" ${half === '0.5' ? 'selected' : ''}>하반기</option>
+                            </select>
+                        </div>
+                    </div>`;
+            });
+            renderEventInputs();
+        }
+
+        function renderEventInputs() {
+            const eInputs = document.getElementById('event-inputs');
+            eInputs.innerHTML = '';
+            teamEvents.forEach((e, idx) => {
+                let sYear = Math.floor(e.startYear);
+                let sHalf = e.startYear % 1 === 0.5 ? '0.5' : '0.0';
+                let eYear = Math.floor(e.endYear);
+                let eHalf = e.endYear % 1 === 0.5 ? '0.5' : '0.0';
+
+                let targetsHtml = `<label><input type="checkbox" class="evt-target-all-${idx}" ${e.targets === 'all' ? 'checked' : ''} onchange="toggleTargetAll(${idx}, this)"> [전체 팀원]</label>`;
+                teamMembers.forEach(m => {
+                    let isChecked = e.targets === 'all' || (Array.isArray(e.targets) && e.targets.includes(m.id));
+                    targetsHtml += `<label><input type="checkbox" class="evt-target-${idx}" value="${m.id}" ${isChecked ? 'checked' : ''}> ${m.name}</label>`;
+                });
+
+                eInputs.innerHTML += `
+                    <div style="background:#1a1a3a; padding:10px; border-radius:6px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <strong style="font-size:0.85rem; color:#38bdf8;">사건 #${idx+1}</strong>
+                            <button type="button" class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeEvent(${idx})">삭제</button>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;">
+                            <div>
+                                <label>시작 연도 및 반기</label>
+                                <div style="display:flex; gap:4px;">
+                                    <input type="number" id="e-s-year-${idx}" value="${sYear}" style="width:70px;" placeholder="연도">
+                                    <select id="e-s-half-${idx}" style="flex:1;">
+                                        <option value="0.0" ${sHalf === '0.0' ? 'selected' : ''}>상반기</option>
+                                        <option value="0.5" ${sHalf === '0.5' ? 'selected' : ''}>하반기</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label>종료 연도 및 반기</label>
+                                <div style="display:flex; gap:4px;">
+                                    <input type="number" id="e-e-year-${idx}" value="${eYear}" style="width:70px;" placeholder="연도">
+                                    <select id="e-e-half-${idx}" style="flex:1;">
+                                        <option value="0.0" ${eHalf === '0.0' ? 'selected' : ''}>상반기</option>
+                                        <option value="0.5" ${eHalf === '0.5' ? 'selected' : ''}>하반기</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>궤적 모션</label>
+                            <select id="e-motion-${idx}">
+                                <option value="merge" ${e.motion === 'merge' ? 'selected' : ''}>🔗 합류 (Merge)</option>
+                                <option value="wobble" ${e.motion === 'wobble' ? 'selected' : ''}>🔥 요동 (Wobble)</option>
+                                <option value="expansion" ${e.motion === 'expansion' ? 'selected' : ''}>🌟 확장 (Expansion)</option>
+                                <option value="divergence" ${e.motion === 'divergence' ? 'selected' : ''}>🚀 이탈/파견 (Divergence)</option>
+                                <option value="contraction" ${e.motion === 'contraction' ? 'selected' : ''}>🔍 축소/결속 (Contraction)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>사건 설명 (자막)</label>
+                            <input type="text" id="e-text-${idx}" value="${e.text}" placeholder="사건 설명 입력">
+                        </div>
+                        <div class="form-group">
+                            <label>관련 인물 선택</label>
+                            <div class="checkbox-group" id="evt-targets-box-${idx}">
+                                ${targetsHtml}
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function toggleTargetAll(idx, masterCheckbox) {
+            const boxes = document.querySelectorAll(`.evt-target-${idx}`);
+            boxes.forEach(b => b.checked = masterCheckbox.checked);
+        }
+
+        function addMember() {
+            if (teamMembers.length >= 20) return alert('최대 20명까지만 추가 가능합니다.');
+            const newId = teamMembers.length > 0 ? Math.max(...teamMembers.map(m => m.id)) + 1 : 1;
+            const newIdx = teamMembers.length;
+            teamMembers.push({
+                id: newId,
+                name: `팀원${newIdx + 1}`,
+                joinYear: 2023.0,
+                color: colorPalette[newIdx % colorPalette.length]
+            });
+            renderEditForms();
+        }
+
+        function removeMember(idx) {
+            if (teamMembers.length <= 1) return alert('최소 1명의 팀원은 존재해야 합니다.');
+            teamMembers.splice(idx, 1);
+            renderEditForms();
+        }
+
+        function addEventInput() {
+            teamEvents.push({ startYear: 2025.0, endYear: 2025.5, motion: "expansion", targets: "all", text: "새로운 성과 달성" });
+            renderEventInputs();
+        }
+
+        function removeEvent(idx) {
+            teamEvents.splice(idx, 1);
+            renderEventInputs();
+        }
+
+        function saveCustomData() {
+            teamMembers.forEach((m, idx) => {
+                const nameInput = document.getElementById(`m-name-${idx}`);
+                if (nameInput) {
+                    m.name = nameInput.value;
+                    let yr = parseInt(document.getElementById(`m-year-${idx}`).value) || 2020;
+                    let hf = parseFloat(document.getElementById(`m-half-${idx}`).value) || 0.0;
+                    m.joinYear = yr + hf;
+                    m.color = document.getElementById(`m-color-${idx}`).value;
+                }
+            });
+
+            const newEvents = [];
+            teamEvents.forEach((e, idx) => {
+                const sYr = parseInt(document.getElementById(`e-s-year-${idx}`).value) || 2020;
+                const sHf = parseFloat(document.getElementById(`e-s-half-${idx}`).value) || 0.0;
+                const eYr = parseInt(document.getElementById(`e-e-year-${idx}`).value) || 2020;
+                const eHf = parseFloat(document.getElementById(`e-e-half-${idx}`).value) || 0.0;
+                
+                const mInput = document.getElementById(`e-motion-${idx}`);
+                const tInput = document.getElementById(`e-text-${idx}`);
+                
+                if (tInput && mInput) {
+                    const allChecked = document.querySelector(`.evt-target-all-${idx}`).checked;
+                    let targets = 'all';
+                    if (!allChecked) {
+                        targets = [];
+                        document.querySelectorAll(`.evt-target-${idx}:checked`).forEach(chk => {
+                            targets.push(parseInt(chk.value));
+                        });
+                    }
+
+                    newEvents.push({
+                        startYear: sYr + sHf,
+                        endYear: eYr + eHf,
+                        motion: mInput.value,
+                        targets: targets,
+                        text: tInput.value
+                    });
+                }
+            });
+            teamEvents = newEvents;
+            renderSummaryCards();
+            alert("설정이 저장되었습니다.");
+        }
+
+        function renderSummaryCards() {
+            const container = document.getElementById('member-summary');
+            if (!container) return;
+            container.innerHTML = '';
+            teamMembers.forEach(m => {
+                let yr = Math.floor(m.joinYear);
+                let halfStr = m.joinYear % 1 === 0.5 ? '하반기' : '상반기';
+                container.innerHTML += `
+                    <div class="member-card" style="border-color: ${m.color};">
+                        <h5>${m.name}</h5>
+                        <p>${yr}년 ${halfStr} 합류</p>
+                    </div>`;
+            });
+        }
+
+        function smoothstep(min, max, value) {
+            const x = Math.max(0, Math.min(1, (value - min) / (max - min)));
+            return x * x * (3 - 2 * x);
+        }
+
+        function updateSpeed(val) {
+            simSpeed = parseFloat(val);
+            document.getElementById('speed-val').innerText = simSpeed.toFixed(1);
+        }
+
+        function initCanvas() {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            
+            const dpr = window.devicePixelRatio || 2;
+            const container = document.getElementById('canvas-container');
+            const rect = container.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            minYear = Math.min(...teamMembers.map(m => m.joinYear));
+            maxYear = Math.max(...teamMembers.map(m => m.joinYear), ...teamEvents.map(e => e.endYear), minYear + 3);
+
+            stars = [];
+            for (let i = 0; i < 180; i++) {
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: (Math.random() * 1.8 + 0.5) * dpr });
+            }
+            renderSummaryCards();
+        }
+
+        function resetSimulation() {
+            if (animId) cancelAnimationFrame(animId);
+            isPlaying = false;
+            document.getElementById('play-btn').innerText = "▶ 재생";
+            currentProgress = 0;
+            simYear = minYear;
+
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            const totalCount = teamMembers.length;
+            const dpr = window.devicePixelRatio || 2;
+
+            memberStates = teamMembers.map((m, idx) => {
+                const spawnAngle = (idx / totalCount) * Math.PI * 2;
+                const cornerDist = canvas.width * 0.38;
+                const startX = canvas.width / 2 + Math.cos(spawnAngle) * cornerDist;
+                const startY = canvas.height / 2 + Math.sin(spawnAngle) * cornerDist;
+                const ringRadius = (70 + (idx % 4) * 30) * dpr; 
+                const orbitOffset = (idx / totalCount) * Math.PI * 2;
+
+                return {
+                    ...m,
+                    angle: 0,
+                    startX: startX,
+                    startY: startY,
+                    ringRadius: ringRadius,
+                    orbitOffset: orbitOffset,
+                    path: []
+                };
+            });
+
+            drawFrame(performance.now());
+        }
+
+        function togglePlayPause() {
+            const btn = document.getElementById('play-btn');
+            if (isPlaying) {
+                isPlaying = false;
+                cancelAnimationFrame(animId);
+                btn.innerText = "▶ 재생";
+            } else {
+                if (currentProgress >= 1) {
+                    currentProgress = 0;
+                }
+                isPlaying = true;
+                btn.innerText = "⏸ 일시정지";
+                lastTime = performance.now();
+                animId = requestAnimationFrame(animate);
+            }
+        }
+
+        function animate(now) {
+            let delta = now - lastTime;
+            lastTime = now;
+
+            currentProgress += (delta * simSpeed) / baseDuration;
+            if (currentProgress >= 1) {
+                currentProgress = 1;
+                isPlaying = false;
+                document.getElementById('play-btn').innerText = "▶ 재생";
+            }
+
+            drawFrame(now);
+
+            if (isPlaying) {
+                animId = requestAnimationFrame(animate);
+            }
+        }
+
+        function drawFrame(now) {
+            const canvas = document.getElementById('spaceCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 2;
+
+            simYear = minYear + currentProgress * (maxYear - minYear);
+
+            ctx.fillStyle = '#03030a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            stars.forEach(s => {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            });
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            // 팀 중심 링
+            let ringAlpha = Math.min((simYear - minYear) * 0.5, 0.3);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 115 * dpr, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(59, 130, 246, ${ringAlpha})`;
+            ctx.lineWidth = 2 * dpr;
+            ctx.setLineDash([8 * dpr, 8 * dpr]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${ringAlpha * 2.5})`;
+            ctx.font = `bold ${14 * dpr}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText("(팀)", cx, cy + 5 * dpr);
+
+            memberStates.forEach(m => {
+                if (simYear < m.joinYear) return;
+
+                let x, y;
+                let opacity = 1.0;
+                let radiusModifier = 1.0;
+                let wobbleOffset = 0;
+                let extraDivergence = 0;
+
+                teamEvents.forEach(evt => {
+                    if (simYear >= evt.startYear && simYear <= evt.endYear) {
+                        const isTargeted = evt.targets === 'all' || (Array.isArray(evt.targets) && evt.targets.includes(m.id));
+                        if (isTargeted) {
+                            const factor = Math.sin(((simYear - evt.startYear) / (evt.endYear - evt.startYear || 0.5)) * Math.PI);
+                            
+                            if (evt.motion === 'wobble') {
+                                wobbleOffset = Math.sin(now * 0.02 + m.id) * (14 * dpr);
+                            } else if (evt.motion === 'expansion') {
+                                radiusModifier += factor * 0.5;
+                            } else if (evt.motion === 'contraction') {
+                                radiusModifier -= factor * 0.4;
+                            } else if (evt.motion === 'divergence') {
+                                extraDivergence += factor * (140 * dpr);
+                                opacity = Math.max(1 - factor * 0.75, 0.25);
+                            }
+                        }
+                    }
+                });
+
+                if (simYear >= m.joinYear && simYear < m.joinYear + 0.5) {
+                    let moveProg = smoothstep(m.joinYear, m.joinYear + 0.5, simYear);
+                    let targetX = cx + Math.cos(m.angle + m.orbitOffset) * m.ringRadius;
+                    let targetY = cy + Math.sin(m.angle + m.orbitOffset) * m.ringRadius;
+
+                    x = m.startX + (targetX - m.startX) * moveProg;
+                    y = m.startY + (targetY - m.startY) * moveProg;
+                    m.angle += 0.01 * (isPlaying ? simSpeed : 0);
+                } else {
+                    if (isPlaying) m.angle += 0.01 * simSpeed;
+                    let currentRadius = (m.ringRadius * radiusModifier) + extraDivergence;
+                    x = cx + Math.cos(m.angle + m.orbitOffset) * (currentRadius + wobbleOffset);
+                    y = cy + Math.sin(m.angle + m.orbitOffset) * (currentRadius + wobbleOffset);
+                }
+
+                // 궤적 누적 (사라지지 않고 계속 쌓임)
+                m.path.push({ x: x, y: y });
+
+                if (m.path.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(m.path[0].x, m.path[0].y);
+                    for (let i = 1; i < m.path.length; i++) {
+                        ctx.lineTo(m.path[i].x, m.path[i].y);
+                    }
+                    ctx.strokeStyle = m.color;
+                    ctx.globalAlpha = 0.4 * opacity;
+                    ctx.lineWidth = 2 * dpr;
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+                }
+
+                ctx.beginPath();
+                ctx.arc(x, y, 6 * dpr, 0, Math.PI * 2);
+                ctx.fillStyle = m.color;
+                ctx.globalAlpha = opacity;
+                ctx.shadowBlur = 12 * dpr;
+                ctx.shadowColor = m.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                const labelText = m.name;
+                ctx.font = `bold ${12 * dpr}px sans-serif`;
+                const textWidth = ctx.measureText(labelText).width;
+                const badgeWidth = textWidth + 16 * dpr;
+                const badgeHeight = 22 * dpr;
+                const badgeX = x - badgeWidth / 2;
+                const badgeY = y - 28 * dpr;
+
+                ctx.fillStyle = `rgba(8, 8, 22, ${0.88 * opacity})`;
+                ctx.beginPath();
+                ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6 * dpr);
+                ctx.fill();
+                ctx.strokeStyle = m.color;
+                ctx.lineWidth = 1 * dpr;
+                ctx.stroke();
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(labelText, x, badgeY + badgeHeight / 2);
+                ctx.globalAlpha = 1.0;
+            });
+
+            // 상단 현재 연도 표시기
+            ctx.fillStyle = "rgba(10, 10, 25, 0.85)";
+            ctx.fillRect(canvas.width / 2 - 85, 20, 170, 36);
+            ctx.strokeStyle = "#3b82f6";
+            ctx.lineWidth = 1.5 * dpr;
+            ctx.beginPath();
+            ctx.roundRect(canvas.width / 2 - 85, 20, 170, 36, 8 * dpr);
+            ctx.stroke();
+
+            ctx.fillStyle = "#38bdf8";
+            ctx.font = `bold ${15 * dpr}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            let currYearInt = Math.floor(simYear);
+            let currHalfStr = simYear % 1 >= 0.4 ? '하반기' : '상반기';
+            ctx.fillText(`📅 ${currYearInt}년 ${currHalfStr}`, canvas.width / 2, 38);
+
+            // 하단 사건 자막
+            let currentEvent = teamEvents.find(e => simYear >= e.startYear && simYear <= e.endYear);
+            if (currentEvent) {
+                const cardW = canvas.width - 60 * dpr;
+                const cardH = 50 * dpr;
+                const cardX = 30 * dpr;
+                const cardY = canvas.height - 100 * dpr;
+
+                ctx.fillStyle = "rgba(5, 5, 18, 0.92)";
+                ctx.beginPath();
+                ctx.roundRect(cardX, cardY, cardW, cardH, 10 * dpr);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(250, 204, 21, 0.6)";
+                ctx.lineWidth = 1.5 * dpr;
+                ctx.stroke();
+
+                ctx.fillStyle = "#facc15";
+                ctx.font = `bold ${14 * dpr}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(`${currentEvent.text}`, canvas.width / 2, cardY + cardH / 2);
+            }
+        }
+
+        function toggleAudio() {
+            const audio = document.getElementById('bgm-audio');
+            const btn = document.getElementById('bgm-btn');
+            
+            if (isAudioOn) {
+                audio.pause();
+                isAudioOn = false;
+                btn.innerText = "🎵 BGM 켜기";
+            } else {
+                audio.play().then(() => {
+                    isAudioOn = true;
+                    btn.innerText = "🎵 BGM 끄기";
+                }).catch(err => {
+                    alert("bgm.mp3 파일을 찾을 수 없거나 브라우저 권한이 제한되었습니다. 깃허브 저장소 root 경로에 bgm.mp3 파일을 올려주세요.");
+                });
+            }
+        }
+
+        window.onload = function() {
+            renderEditForms();
+        };
+    </script>
+</body>
+</html>
